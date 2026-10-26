@@ -7,7 +7,6 @@ import dev.alexk.domain.PaymentStatus;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.OffsetDateTime;
@@ -24,14 +23,13 @@ public class TaskDispatcher {
     private final OrderRepository orderRepository;
     private final TransactionTemplate txTemplate;
     private final TaskProcessor taskProcessor;
-    //private final ExecutorService taskDispatcherThreadPool;
-    private final ExecutorService externalHttpThreadPool;
+    private final ExecutorService taskDispatcherThreadPool;
+
     private final TaskDispatcherProperties properties;
 
     public void dispatch(TaskEntity task) {
         CompletableFuture
-                //.supplyAsync(() -> taskProcessor.processTask(task), taskDispatcherThreadPool)
-                .supplyAsync(() -> taskProcessor.processTask(task), externalHttpThreadPool)
+                .supplyAsync(() -> taskProcessor.processTask(task), taskDispatcherThreadPool)
                 .thenAccept(result -> handleTaskExecuted(task, result))
                 .exceptionally(ex ->  handleExceptionInTaskHappened(task, ex));
     }
@@ -164,33 +162,37 @@ public class TaskDispatcher {
         var nextAttemptAt = OffsetDateTime.now().plus(properties.getRetryDelay());
         taskRepository.save(task.toBuilder()
                 .status(TaskStatus.FAILED_RETRYABLE)
+                .inProcessing(false)
                 .nextAttemptAt(nextAttemptAt)
                 .build());
     }
 
-    @Transactional
+
     private void handleTaskFailed(TaskEntity task, TaskProcessResponse processResponse) {
         log.info("Handling failed task with id={}", task.getId());
-        taskRepository.save(task.toBuilder()
-                .status(TaskStatus.FAILED_NON_RETRYABLE)
-                .inProcessing(false)
-                .nextAttemptAt(null)
-                .note(getProcessResponseMessage(processResponse))
-                .build());
-        orderRepository
-                .findById(task.getOrder().getId())
-                .map(order -> {
-                    if (order.getAuthorizedAmount() == null) {
-                        order.setPaymentStatus(PaymentStatus.AUTHORIZATION_FAILED);
-                    } else if (order.getFinalAmount() == null) {
-                        order.setPaymentStatus(PaymentStatus.PRICE_CHANGED_FAILED);
-                    } else if (order.getCapturedAmount() == null) {
-                        order.setPaymentStatus(PaymentStatus.CAPTURE_FAILED);
-                    }
-                    return orderRepository.save(order);
-                })
-                .orElseThrow(() -> new RuntimeException("Order with id=" +
-                        task.getOrder().getId() + " not found"));
+        txTemplate.execute(status -> {
+            taskRepository.save(task.toBuilder()
+                    .status(TaskStatus.FAILED_NON_RETRYABLE)
+                    .inProcessing(false)
+                    .nextAttemptAt(null)
+                    .note(getProcessResponseMessage(processResponse))
+                    .build());
+            orderRepository
+                    .findById(task.getOrder().getId())
+                    .map(order -> {
+                        if (order.getAuthorizedAmount() == null) {
+                            order.setPaymentStatus(PaymentStatus.AUTHORIZATION_FAILED);
+                        } else if (order.getFinalAmount() == null) {
+                            order.setPaymentStatus(PaymentStatus.PRICE_CHANGED_FAILED);
+                        } else if (order.getCapturedAmount() == null) {
+                            order.setPaymentStatus(PaymentStatus.CAPTURE_FAILED);
+                        }
+                        return orderRepository.save(order);
+                    })
+                    .orElseThrow(() -> new RuntimeException("Order with id=" +
+                            task.getOrder().getId() + " not found"));
+            return null;
+        });
     }
 
     private String getProcessResponseMessage(TaskProcessResponse processResponse) {

@@ -5,10 +5,26 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/orders}
     username: ${SPRING_DATASOURCE_USERNAME:user}
     password: ${SPRING_DATASOURCE_PASSWORD:pass}
+    hikari:
+      maximum-pool-size: 100
   liquibase:
     change-log: classpath:/db/changelog/changelog-master.yaml
+
+  jpa:
+    #hibernate:
+    #  ddl-auto: create
+    show-sql: false # Показывать SQL-запросы в консоли
+    logging:
+      level:
+        org.hibernate.SQL: DEBUG  # SQL запросы
+        org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    properties:
+      hibernate:
+        format_sql: true # Форматировать SQL для читаемости
+
   docker:
     compose:
+      enabled: true
       file: ./order-orchestrator/docker-compose.dev.yaml
       lifecycle-management: start-and-stop   # поднимает при старте, останавливает при завершении
       start:
@@ -17,6 +33,31 @@ spring:
       stop:
         command: down                     # полностью закрывает контейнеры
         arguments: -v
+  threads:
+    virtual:
+      enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true} # каждый запрос в своем виртуальном потоке
+
+task-execution:
+  poller:
+    poll-interval-ms: ${TASK_EXEC_POLL_INTERVAL_MS:10000}
+    batch-size: ${TASK_EXEC_POLL_BATCH_SIZE:10}
+    retry-delay: ${TASK_EXEC_POLL_RETRY_DELAY:30s}
+  dispatcher:
+    max-attempts: ${TASK_EXEC_DISPATCHER_MAX_ATTEMPTS:10}
+    retry-delay: ${TASK_EXEC_DISPATCHER_RETRY_DELAY:1s}
+    thread-pool-size: ${TASK_EXEC_DISPATCHER_THREAD_POOL_SIZE:10}
+  external-http:
+    thread-pool-size: ${TASK_EXEC_EXTERNAL_HTTP_THREAD_POOL_SIZE:16}
+
+
+server:
+  tomcat:
+    max-connections: 10000 # максимальное кол-во открытых сокетов (коннектов) (дефолт - 8192)
+    threads:
+      max-queue-capacity: 1000 # размер очереди запросов (дефолт - Integer.MAX_VALUE)
+      min-spare: 5 # минимальное кол-во потоков (нативных) в пуле томката (дефолт - 10)
+      max: 10 # максимальное кол-во потоков (нативных) в пуле томката (дефолт - 200)
+  port: 8082
 
 # настройки Swagger
 springdoc:
@@ -24,4 +65,7 @@ springdoc:
     path: /swagger-ui
 
 payment:
-  stub-url: ${PAYMENT_STUB_URL:http://localhost:8081}
+  stub:
+    base-url: ${PAYMENT_STUB_URL:http://localhost:8081}
+    read-timeout: ${STUB_BASE_READ_TIMEOUT:30}
+    connect-timeout: ${STUB_BASE_CONNECT_TIMEOUT:30}

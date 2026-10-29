@@ -6,9 +6,6 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-
 import dev.alexk.config.PaymentWebClient;
 import dev.alexk.warehouse.CalculatePricingRequestDto;
 import dev.alexk.warehouse.CalculatePricingResponseDto;
@@ -20,11 +17,10 @@ import dev.alexk.warehouse.CalculatePricingResponseDto;
 public class TaskProcessor {
 
     private final PaymentWebClient webClient;
-    private final ExecutorService externalHttpThreadPool;
 
-    static final String PAYMENT_AUTHORIZE = "/payment/authorize";
-    static final String PAYMENT_CAPTURE = "/payment/capture";
-    static final String WAREHOUSE = "/warehouse/calculate-price";
+    private static final String PAYMENT_AUTHORIZE = "/payment/authorize";
+    private static final String PAYMENT_CAPTURE = "/payment/capture";
+    private static final String WAREHOUSE = "/warehouse/calculate-price";
 
     public TaskProcessResponse processTask(TaskEntity task) {
         log.info("Process task with id={}", task.getId());
@@ -66,35 +62,24 @@ public class TaskProcessor {
             Long taskId,
             AuthorizePaymentRequestDto requestDto,
             TaskProcessResponse processResponse) {
-
         log.info("Calling auth stub for taskId={}", taskId);
-        try {
-            CompletableFuture
-                .supplyAsync(() ->
-                    webClient.webClientWithTimeout().post()
-                            .uri(PAYMENT_AUTHORIZE)
-                            .bodyValue(requestDto)
-                            .retrieve()
-                            .toEntity(AuthorizePaymentResponseDto.class)
-                            .block(), externalHttpThreadPool) // synchronous call
-                .thenApply(authResponse -> {
-                    log.info("AUTH call completed with result {}", authResponse);
-                    if (authResponse.getBody() != null) {
-                        if (authResponse.getBody().authorizationId() != null) {
-                            processResponse.taskStatus = TaskStatus.SUCCEEDED;
-                        }
-                        else if (authResponse.getBody().status() == AuthorizationStatus.DECLINED) {
-                            processResponse.taskStatus = TaskStatus.FAILED_NON_RETRYABLE;
-                        }
-                        processResponse.authResponseDto = authResponse.getBody();
+        webClient.webClientWithTimeout().post()
+            .uri(PAYMENT_AUTHORIZE)
+            .bodyValue(requestDto)
+            .retrieve()
+            .toEntity(AuthorizePaymentResponseDto.class)
+            .subscribe(authResponse -> {
+                log.info("AUTH call completed with result {}", authResponse);
+                if (authResponse.getBody() != null) {
+                    if (authResponse.getBody().authorizationId() != null) {
+                        processResponse.taskStatus = TaskStatus.SUCCEEDED;
                     }
-                    return null;
-                });
-        } catch (Exception e) {
-            log.error("Error while processing task with taskId={}", taskId, e);
-            processResponse.taskStatus = TaskStatus.FAILED_NON_RETRYABLE;
-            processResponse.message = e.getMessage();  // e.g. connection to payment stub refused
-        }
+                    else if (authResponse.getBody().status() == AuthorizationStatus.DECLINED) {
+                        processResponse.taskStatus = TaskStatus.FAILED_NON_RETRYABLE;
+                    }
+                    processResponse.authResponseDto = authResponse.getBody();
+                }
+            });
     }
 
 
@@ -102,34 +87,23 @@ public class TaskProcessor {
             Long taskId,
             CalculatePricingRequestDto requestDto,
             TaskProcessResponse processResponse) {
-
         log.info("Calling warehouse stub for taskId={}", taskId);
-        try {
-            CompletableFuture
-                    .supplyAsync(() ->
-                            webClient.webClientWithTimeout().post()
-                                    .uri(WAREHOUSE)
-                                    .bodyValue(requestDto)
-                                    .retrieve()
-                                    .toEntity(CalculatePricingResponseDto.class)
-                                    .block(), externalHttpThreadPool) // synchronous call
-                    .thenApply(repriceResponse -> {
-                        log.info("REPRICE call completed: {}", repriceResponse);
-                        if (repriceResponse.getBody() != null) {
-                            if (repriceResponse.getBody().finalAmount() != null) {
-                                processResponse.taskStatus = TaskStatus.SUCCEEDED;
-                            } else {
-                                processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
-                            }
-                            processResponse.pricingResponseDto = repriceResponse.getBody();
-                        }
-                        return null;
-                    });
-        } catch (Exception e) {
-            log.error("Error while processing task with taskId={}", taskId, e);
-            processResponse.taskStatus = TaskStatus.FAILED_NON_RETRYABLE;
-            processResponse.message = e.getMessage();
-        }
+        webClient.webClientWithTimeout().post()
+            .uri(WAREHOUSE)
+            .bodyValue(requestDto)
+            .retrieve()
+            .toEntity(CalculatePricingResponseDto.class)
+            .subscribe(repriceResponse -> {
+                log.info("REPRICE call completed: {}", repriceResponse);
+                if (repriceResponse.getBody() != null) {
+                    if (repriceResponse.getBody().finalAmount() != null) {
+                        processResponse.taskStatus = TaskStatus.SUCCEEDED;
+                    } else {
+                        processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
+                    }
+                    processResponse.pricingResponseDto = repriceResponse.getBody();
+                }
+            });
     }
 
 
@@ -137,33 +111,23 @@ public class TaskProcessor {
             Long taskId,
             CapturePaymentRequestDto requestDto,
             TaskProcessResponse processResponse) {
-
         log.info("Calling capture stub for taskId={}", taskId);
-        try {
-            CompletableFuture.supplyAsync(() ->
-                    webClient.webClientWithTimeout().post()
-                            .uri(PAYMENT_CAPTURE)
-                            .bodyValue(requestDto)
-                            .retrieve()
-                            .toEntity(CapturePaymentResponseDto.class)
-                            .block(), externalHttpThreadPool) // synchronously
-                    .thenApply(captureResponse -> {
-                        log.info("CAPTURE call completed: {}", captureResponse);
-                        if (captureResponse.getBody() != null) {
-                            if (captureResponse.getBody().capturedAmount() != null) {
-                                processResponse.taskStatus = TaskStatus.SUCCEEDED;
-                            } else {
-                                processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
-                            }
-                            processResponse.captureResponseDto = captureResponse.getBody();
-                        }
-                        return null;
-                    });
-        } catch (Exception e) {
-            log.error("Error while processing task with taskId={}", taskId, e);
-            processResponse.taskStatus = TaskStatus.FAILED_NON_RETRYABLE;
-            processResponse.message = e.getMessage();
-        }
+        webClient.webClientWithTimeout().post()
+            .uri(PAYMENT_CAPTURE)
+            .bodyValue(requestDto)
+            .retrieve()
+            .toEntity(CapturePaymentResponseDto.class)
+            .subscribe(captureResponse -> {
+                log.info("CAPTURE call completed: {}", captureResponse);
+                if (captureResponse.getBody() != null) {
+                    if (captureResponse.getBody().capturedAmount() != null) {
+                        processResponse.taskStatus = TaskStatus.SUCCEEDED;
+                    } else {
+                        processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
+                    }
+                    processResponse.captureResponseDto = captureResponse.getBody();
+                }
+            });
     }
 
 }

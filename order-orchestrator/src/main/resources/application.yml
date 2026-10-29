@@ -23,16 +23,16 @@ spring:
         format_sql: true # Форматировать SQL для читаемости
 
   docker:
-    docker:
-      compose:
-        file: ./order-orchestrator/docker-compose.dev.yaml
-        lifecycle-management: start-and-stop   # поднимает при старте, останавливает при завершении
-        start:
-          command: up                         # использовать `docker compose up`
-          arguments: --force-recreate         # ВСЕГДА пересоздавать контейнеры
-        stop:
-          command: down                     # полностью закрывает контейнеры
-          arguments: -v
+    compose:
+      enabled: true
+      file: ./order-orchestrator/docker-compose.dev.yaml
+      lifecycle-management: start-and-stop   # поднимает при старте, останавливает при завершении
+      start:
+        command: up                         # использовать `docker compose up`
+        arguments: --force-recreate         # ВСЕГДА пересоздавать контейнеры
+      stop:
+        command: down                     # полностью закрывает контейнеры
+        arguments: -v
   threads:
     virtual:
       enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true} # каждый запрос в своем виртуальном потоке

@@ -31,7 +31,7 @@ public class TaskDispatcher {
         CompletableFuture
                 .supplyAsync(() -> taskProcessor.processTask(task), taskDispatcherThreadPool)
                 .thenAccept(result -> handleTaskExecuted(task, result))
-                .exceptionally(ex ->  handleExceptionInTaskHappened(task, ex));
+                .exceptionally(ex -> handleExceptionInTaskHappened(task, ex));
     }
 
     private Void handleExceptionInTaskHappened(TaskEntity task, Throwable ex) {
@@ -56,6 +56,7 @@ public class TaskDispatcher {
 
     /**
      * Handle response from PaymentStub or WarehouseStub
+     *
      * @param task
      * @param processResponse
      */
@@ -82,8 +83,7 @@ public class TaskDispatcher {
                         .orElseThrow(() -> new RuntimeException("Order with id=" + orderId + " not found"));
                 return null;
             });
-        }
-        else if (processResponse.pricingResponseDto != null) {
+        } else if (processResponse.pricingResponseDto != null) {
             log.info("Updating order and task after payment reprice step, orderId={}", orderId);
             var finalAmount = processResponse.pricingResponseDto.finalAmount();
             var authorizedAmount = task.getOrder().getAuthorizedAmount();
@@ -123,8 +123,7 @@ public class TaskDispatcher {
                     return null;
                 });
             }
-        }
-        else if (processResponse.captureResponseDto != null) {
+        } else if (processResponse.captureResponseDto != null) {
             log.info("Updating order and task after payment capture step, orderId={}", orderId);
             txTemplate.execute(status -> {
                 taskRepository.save(task.toBuilder()
@@ -207,6 +206,19 @@ public class TaskDispatcher {
             result = processResponse.message;
         }
         return result;
+    }
+
+    public void shutdown() {
+        taskDispatcherThreadPool.shutdown();
+        try {
+            boolean isTerminated = taskDispatcherThreadPool.awaitTermination(10, TimeUnit.MILLISECONDS);
+            if (!isTerminated) {
+                taskDispatcherThreadPool.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            taskDispatcherThreadPool.shutdownNow();
+            throw new RuntimeException(e);
+        }
     }
 
 }

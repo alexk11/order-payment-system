@@ -63,23 +63,27 @@ public class TaskProcessor {
             AuthorizePaymentRequestDto requestDto,
             TaskProcessResponse processResponse) {
         log.info("Calling auth stub for taskId={}", taskId);
-        webClient.webClientWithTimeout().post()
+        var authResponse = webClient.webClientWithTimeout().post()
             .uri(PAYMENT_AUTHORIZE)
             .bodyValue(requestDto)
             .retrieve()
             .toEntity(AuthorizePaymentResponseDto.class)
-            .subscribe(authResponse -> {
-                log.info("AUTH call completed with result {}", authResponse);
-                if (authResponse.getBody() != null) {
-                    if (authResponse.getBody().authorizationId() != null) {
-                        processResponse.taskStatus = TaskStatus.SUCCEEDED;
-                    }
-                    else if (authResponse.getBody().status() == AuthorizationStatus.DECLINED) {
-                        processResponse.taskStatus = TaskStatus.FAILED_NON_RETRYABLE;
-                    }
-                    processResponse.authResponseDto = authResponse.getBody();
+            .block();
+
+        if (authResponse != null) {
+            log.info("AUTH call completed with result {}", authResponse);
+            if (authResponse.getBody() != null) {
+                if (authResponse.getBody().authorizationId() != null) {
+                    processResponse.taskStatus = TaskStatus.SUCCEEDED;
                 }
-            });
+                else if (authResponse.getBody().status() == AuthorizationStatus.DECLINED) {
+                    processResponse.taskStatus = TaskStatus.FAILED_NON_RETRYABLE;
+                }
+                processResponse.authResponseDto = authResponse.getBody();
+            } else { // connection refused (?)
+                processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
+            }
+        }
     }
 
 
@@ -88,22 +92,26 @@ public class TaskProcessor {
             CalculatePricingRequestDto requestDto,
             TaskProcessResponse processResponse) {
         log.info("Calling warehouse stub for taskId={}", taskId);
-        webClient.webClientWithTimeout().post()
+        var repriceResponse = webClient.webClientWithTimeout().post()
             .uri(WAREHOUSE)
             .bodyValue(requestDto)
             .retrieve()
             .toEntity(CalculatePricingResponseDto.class)
-            .subscribe(repriceResponse -> {
-                log.info("REPRICE call completed: {}", repriceResponse);
-                if (repriceResponse.getBody() != null) {
-                    if (repriceResponse.getBody().finalAmount() != null) {
-                        processResponse.taskStatus = TaskStatus.SUCCEEDED;
-                    } else {
-                        processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
-                    }
-                    processResponse.pricingResponseDto = repriceResponse.getBody();
+            .block();
+
+        if (repriceResponse != null) {
+            log.info("REPRICE call completed: {}", repriceResponse);
+            if (repriceResponse.getBody() != null) {
+                if (repriceResponse.getBody().finalAmount() != null) {
+                    processResponse.taskStatus = TaskStatus.SUCCEEDED;
+                } else {
+                    processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
                 }
-            });
+                processResponse.pricingResponseDto = repriceResponse.getBody();
+            } else {
+                processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
+            }
+        }
     }
 
 
@@ -112,22 +120,26 @@ public class TaskProcessor {
             CapturePaymentRequestDto requestDto,
             TaskProcessResponse processResponse) {
         log.info("Calling capture stub for taskId={}", taskId);
-        webClient.webClientWithTimeout().post()
+        var captureResponse = webClient.webClientWithTimeout().post()
             .uri(PAYMENT_CAPTURE)
             .bodyValue(requestDto)
             .retrieve()
             .toEntity(CapturePaymentResponseDto.class)
-            .subscribe(captureResponse -> {
-                log.info("CAPTURE call completed: {}", captureResponse);
-                if (captureResponse.getBody() != null) {
-                    if (captureResponse.getBody().capturedAmount() != null) {
-                        processResponse.taskStatus = TaskStatus.SUCCEEDED;
-                    } else {
-                        processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
-                    }
-                    processResponse.captureResponseDto = captureResponse.getBody();
+            .block();
+
+        if (captureResponse != null) {
+            log.info("CAPTURE call completed: {}", captureResponse);
+            if (captureResponse.getBody() != null) {
+                if (captureResponse.getBody().capturedAmount() != null) {
+                    processResponse.taskStatus = TaskStatus.SUCCEEDED;
+                } else {
+                    processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
                 }
-            });
+                processResponse.captureResponseDto = captureResponse.getBody();
+            } else {
+                processResponse.taskStatus = TaskStatus.FAILED_RETRYABLE;
+            }
+        }
     }
 
 }

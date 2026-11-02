@@ -40,7 +40,7 @@ public class OrderEntity {
     @Column(name = "captured_amount")
     private BigDecimal capturedAmount;
 
-    @Column(name = "status", nullable = false)
+    @Column(name = "payment_status", nullable = false)
     @Convert(converter = PaymentStatusConverter.class)
     private PaymentStatus paymentStatus;
 

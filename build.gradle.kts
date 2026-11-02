@@ -3,7 +3,7 @@ plugins {
 }
 
 allprojects {
-    group = "dev.sorokin"
+    group = "dev.alexk"
 
     repositories {
         mavenCentral()
